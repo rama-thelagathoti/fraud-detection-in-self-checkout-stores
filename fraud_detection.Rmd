@@ -1,0 +1,380 @@
+---
+title: "contest3"
+author: "Rama Krishna Thelagathoti"
+date: "25/04/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r contest3}
+
+library(readr)
+library(GGally)
+library(caret)
+library(randomForest)
+library(MLmetrics)
+library(DMwR)
+library(unbalanced)
+library(ROSE)
+library(rpart)
+library(e1071)
+library(magrittr)
+library(dplyr)
+library(Matrix)
+library(xgboost)
+
+
+
+#JUST FOR READABILITY PURPOSE I AM WRITTING SEPARATE CODE FOR EACH COMBINATION
+#WARNING:: CODE MIGHT LOOK LENGTHY AND REPETITIVE 
+#I PERFORMED MULTILPLE EXPERIMENTS TO MEASURE TRADITIONAL VS WEIGHTED ACCUJRACY
+
+train = read.csv("C:/STAT8456/contest3/train.csv")
+test = read.csv("C:/STAT8456/contest3/test.csv")
+
+str(train)
+table(train$fraud)
+
+#################################################
+#Test-1 : RUN LOGISTIC REGRESSION WITHOUT ANY CHANGES
+################################################
+set.seed(1231)
+trainIndex <- createDataPartition(train$fraud, p = .7, 
+                                  list = FALSE, 
+                                  times = 1)
+
+train.data <- train[ trainIndex,]
+test.data  <- train[-trainIndex,]
+
+#fraud distribution in traning and testing  data
+table(train.data$fraud)
+table(test.data$fraud)
+
+set.seed(1232)
+glm_full <- glm(fraud ~ credit + total+ duration + scans + voidedScans + attemptsWoScan,family = "binomial", data=train.data)
+
+summary(glm_full)
+
+pred <- predict(glm_full, newdata = test.data, type = "response")
+y_pred_num <- ifelse(pred > 0.5, 1, 0)
+y_pred <- factor(y_pred_num, levels=c(0, 1))
+y_act <- test.data$fraud
+mean(y_pred == y_act)
+#Predicted vs Actual Accuracy = 97.69%
+
+w <- 0.5
+f <- 2/w
+nf <- 1/w
+wa <- 0
+for (i in 1:nrow(test.data)) {
+  wa = wa + ifelse(y_pred[i] == 1, f, nf)
+}
+#weighted accuracy
+wa
+
+#on test data
+pred <- predict(glm_full, newdata = test, type = "response")
+y_pred_num <- ifelse(pred > 0.5, 1, 0)
+y_pred <- factor(y_pred_num, levels=c(0, 1))
+submission <- data.frame("id" = test$id, "fraud" = y_pred, stringsAsFactors = FALSE)
+write.csv(submission, file="test1.csv", row.names = FALSE, quote=FALSE)
+#submision accuracy 96.3
+
+#################################################################
+#handling Imbalance of the data
+#down sampling, up sampling, SMOTE
+#################################################################
+
+train.data$fraud <- as.factor(train.data$fraud)
+
+#Using Down Sampling
+set.seed(1231)
+'%ni%' <- Negate('%in%')  # define 'not in' func
+down_train <- downSample(x = train.data[, colnames(train.data) %ni% "fraud"],
+                         y = train.data$fraud,list = FALSE, yname = "fraud" )
+table(down_train$fraud)
+
+
+#Using UP Sampling
+set.seed(1233)
+'%ni%' <- Negate('%in%')  # define 'not in' func
+up_train <- upSample(x = train.data[, colnames(train.data) %ni% "fraud"],
+                         y = train.data$fraud,list = FALSE, yname = "fraud" )
+table(up_train$fraud)
+
+#Using SMOTE
+set.seed(1235)
+smote_train <- SMOTE(fraud ~ ., data  = train.data)                         
+table(smote_train$fraud)
+
+#using ROSE
+set.seed(9560)
+rose_train <- ROSE(fraud ~ ., data  = train.data)$data 
+table(rose_train$fraud)
+
+
+#################################################
+#Test-2 : RUN LOGISTIC REGRESSION WITH HANDLING DATA IMBALANCE
+#TEST WITH DOWN SAMPLING
+################################################
+
+  set.seed(1234)
+  glm_full <- glm(fraud ~ credit + total+ duration + scans + voidedScans + attemptsWoScan,family = "binomial", data=down_train)
+  
+  summary(glm_full)
+  
+  pred <- predict(glm_full, newdata = test.data, type = "response")
+  y_pred_num <- ifelse(pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred_num, levels=c(0, 1))
+  y_act <- test.data$fraud
+  mean(y_pred == y_act)
+  #accuracy = 96.8%
+  
+  wa <- 0
+  for (i in 1:nrow(test.data)) {
+    wa = wa + ifelse(y_pred[i] == 1, f, nf)
+  }
+  #weighted accuracy
+  wa
+  
+    #on test data
+  pred <- predict(glm_full, newdata = test, type = "response")
+  y_pred_num <- ifelse(pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred_num, levels=c(0, 1))
+  submission <- data.frame("id" = test$id, "fraud" = y_pred, stringsAsFactors = FALSE)
+  write.csv(submission, file="test2.csv", row.names = FALSE, quote=FALSE)
+  #submision accuracy ?
+
+#################################################
+#Test-3 : RUN LOGISTIC REGRESSION WITH HANDLING DATA IMBALANCE
+#TEST WITH UP SAMPLING
+################################################
+  
+  set.seed(1236)
+  glm_full <- glm(fraud ~ credit + total+ duration + scans + voidedScans + attemptsWoScan,family = "binomial", data=up_train)
+  
+  summary(glm_full)
+  
+  pred <- predict(glm_full, newdata = test.data, type = "response")
+  y_pred_num <- ifelse(pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred_num, levels=c(0, 1))
+  y_act <- test.data$fraud
+  mean(y_pred == y_act)
+  #accuracy = 97.39%
+  
+  wa <- 0
+  for (i in 1:nrow(test.data)) {
+    wa = wa + ifelse(y_pred[i] == 1, f, nf)
+  }
+  #weighted accuracy
+  wa
+  #on test data
+  pred <- predict(glm_full, newdata = test, type = "response")
+  y_pred_num <- ifelse(pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred_num, levels=c(0, 1))
+  submission <- data.frame("id" = test$id, "fraud" = y_pred, stringsAsFactors = FALSE)
+  write.csv(submission, file="test3.csv", row.names = FALSE, quote=FALSE)
+  #submision accuracy ?
+
+
+#################################################
+#Test-4 : RUN LOGISTIC REGRESSION WITH HANDLING DATA IMBALANCE
+#TEST WITH SMOTE
+################################################
+  
+  set.seed(1238)
+  glm_full <- glm(fraud ~ credit + duration + scans + voidedScans + attemptsWoScan,
+                  family = "binomial", data=smote_train)
+  
+  summary(glm_full)
+  
+  pred <- predict(glm_full, newdata = test.data, type = "response")
+  y_pred_num <- ifelse(pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred_num, levels=c(0, 1))
+  y_act <- test.data$fraud
+  mean(y_pred == y_act)
+  #accuracy = 97.39%
+  
+  wa <- 0
+  for (i in 1:nrow(test.data)) {
+    wa = wa + ifelse(y_pred[i] == 1, f, nf)
+  }
+  #weighted accuracy
+  wa
+  
+  #on test data
+  pred <- predict(glm_full, newdata = test, type = "response")
+  y_pred_num <- ifelse(pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred_num, levels=c(0, 1))
+  submission <- data.frame("id" = test$id, "fraud" = y_pred, stringsAsFactors = FALSE)
+  write.csv(submission, file="test4.csv", row.names = FALSE, quote=FALSE)
+  #submision accuracy 95.13
+
+  #################################################
+#Test-4a : RUN LOGISTIC REGRESSION WITH HANDLING DATA IMBALANCE
+#TEST WITH ROSE
+################################################
+  
+  set.seed(1238)
+  glm_full <- glm(fraud ~ credit + duration + scans + voidedScans + attemptsWoScan,
+                  family = "binomial", data=rose_train)
+  
+  summary(glm_full)
+  
+  pred <- predict(glm_full, newdata = test.data, type = "response")
+  y_pred_num <- ifelse(pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred_num, levels=c(0, 1))
+  y_act <- test.data$fraud
+  mean(y_pred == y_act)
+  #accuracy = 97.39%
+  
+  wa <- 0
+  for (i in 1:nrow(test.data)) {
+    wa = wa + ifelse(y_pred[i] == 1, f, nf)
+  }
+  #weighted accuracy
+  wa
+  
+  #on test data
+  pred <- predict(glm_full, newdata = test, type = "response")
+  y_pred_num <- ifelse(pred > 0.5, 1, 0)
+  y_pred <- factor(y_pred_num, levels=c(0, 1))
+  submission <- data.frame("id" = test$id, "fraud" = y_pred, stringsAsFactors = FALSE)
+  write.csv(submission, file="test4.csv", row.names = FALSE, quote=FALSE)
+  #submision accuracy 95.13
+  
+##############################################################
+# TEST -5 - RAMDOM FOREST
+##############################################################
+
+
+rfmodel <- randomForest(fraud~., data=train.data, importance=TRUE, ntree=200, mtry=5, nodesize=50)
+summary(rfmodel)
+fitted.results <- predict(rfmodel,newdata=test.data,type='response')
+
+misClasificError <- mean(fitted.results != test.data$fraud)
+print(paste('Accuracy',1-misClasificError))
+#97.79
+#with clean train 98.73
+  wa <- 0
+  for (i in 1:nrow(test.data)) {
+    wa = wa + ifelse(fitted.results[i] == 1, f, nf)
+  }
+  #weighted accuracy
+  wa
+
+#on the test
+fitted.results <- predict(rfmodel,newdata=test,type='response')
+submission <- data.frame("id" = test$id, "fraud" = fitted.results, stringsAsFactors = FALSE)
+write.csv(submission, file="test5_normal.csv", row.names = FALSE, quote=FALSE)
+#96.13
+#with clean kaggle 96.17
+
+##############################################################
+# TEST -5 - RAMDOM FOREST WITH ubSMOTE
+##############################################################
+
+set.seed(1237)
+
+balance <- ubSMOTE(X = train.data[,-9], Y = train.data$fraud,
+perc.over=200, perc.under=800, verbose=TRUE)
+balancedf <- cbind(balance$X, fraud = balance$Y)
+table(balancedf$fraud)/nrow(balancedf)
+
+set.seed(12345)
+trainIndex <- createDataPartition(balancedf$fraud, p = .7, 
+                                  list = FALSE, 
+                                  times = 1)
+
+balancedf.train <- balancedf[ trainIndex,]
+balancedf.test  <- balancedf[-trainIndex,]
+table(balancedf.train$fraud)
+table(balancedf.test$fraud)
+
+set.seed(1238)
+
+
+rfmodel <- randomForest(fraud~., data=balancedf.train, importance=TRUE, ntree=200, mtry=5, nodesize=50)
+summary(rfmodel)
+fitted.results <- predict(rfmodel,newdata=balancedf.test,type='response')
+
+misClasificError <- mean(fitted.results != balancedf.test$fraud)
+print(paste('Accuracy',1-misClasificError))
+#97.79
+#with clean train 98.73
+  wa <- 0
+  for (i in 1:nrow(balancedf.test)) {
+    wa = wa + ifelse(fitted.results[i] == 1, f, nf)
+  }
+  #weighted accuracy
+  wa
+
+#on the test
+fitted.results <- predict(rfmodel,newdata=test,type='response')
+submission <- data.frame("id" = test$id, "fraud" = fitted.results, stringsAsFactors = FALSE)
+write.csv(submission, file="test5.csv", row.names = FALSE, quote=FALSE)
+#96.13
+#with clean kaggle 96.17
+
+##############################################################
+# XGBOOST
+##############################################################
+
+train.data$fraud <- as.numeric(as.character(train.data$fraud))
+
+# Create matrix - One-Hot Encoding for Factor variables
+trainm <- sparse.model.matrix(fraud ~ .-1, data = train.data)
+train_label <- train.data[,"fraud"]
+train_matrix <- xgb.DMatrix(data = as.matrix(trainm), label = train_label)
+
+testm <- sparse.model.matrix(fraud~.-1, data = test.data)
+test_label <- test.data[,"fraud"]
+test_matrix <- xgb.DMatrix(data = as.matrix(testm), label = test_label)
+
+main.testm <- test
+main.testm$fraud <- 0
+main.testm$fraud <- as.factor(main.testm$fraud)
+main.testm1 <- sparse.model.matrix(fraud~.-1, data = main.testm)
+maintest_label <- main.testm[,"fraud"]
+maintest_matrix <- xgb.DMatrix(data = as.matrix(main.testm1), label = maintest_label)
+
+
+bst <- xgboost(data = train_matrix, label = train_label, max_depth = 10,gamma = 0.1,
+               eta = 0.1,  nrounds = 100,objective = "binary:logistic")
+
+# Feature importance
+imp <- xgb.importance(colnames(train_matrix), model = bst)
+print(imp)
+xgb.plot.importance(imp)
+#remove id, modified..,total
+
+pred <- predict(bst, newdata = test_matrix)
+y_pred_num <- ifelse(pred > 0.5, 1, 0)
+y_pred <- factor(y_pred_num, levels=c(0, 1))
+y_act <- test.data$fraud
+mean(y_pred == y_act)
+#accuracy 98.7
+
+  wa <- 0
+  for (i in 1:nrow(test.data)) {
+    wa = wa + ifelse(y_pred[i] == 1, f, nf)
+  }
+  #weighted accuracy
+  wa
+  
+#on test data
+pred <- predict(bst, newdata = maintest_matrix)
+y_pred_num <- ifelse(pred > 0.5, 1, 0)
+y_pred <- factor(y_pred_num, levels=c(0, 1))
+
+submission <- data.frame("id" = test$id, "fraud" = y_pred, stringsAsFactors = FALSE)
+write.csv(submission, file="xgboost.csv", row.names = FALSE, quote=FALSE)
+# kaggle accuracy 98.4
+
+
+
+```
